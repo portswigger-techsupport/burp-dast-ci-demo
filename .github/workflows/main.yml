@@ -149,6 +149,7 @@ jobs:
             -e BURP_ENTERPRISE_SERVER_URL=${{ secrets.BURP_URL }} \
             -e BURP_CONFIG_FILE_PATH=${{ github.workspace }}/.burp/burp-config.yml \
             -e BURP_REPORT_FILE_PATH=${{ github.workspace }}/burp_junit_report.xml \
+            -e BURP_REPORT_FORMAT="JUNIT,BURP_XML" \
             public.ecr.aws/portswigger/enterprise-scan-container:latest
       - name: Environment cleanup
         if: always()
@@ -168,21 +169,44 @@ jobs:
           report_paths: ${{ github.workspace }}/burp_junit_report.xml
           fail_on_failure: false
           require_tests: false
-      - name: Upload Burp scan results to DefectDojo
-        if: always()
-        run: |
-          curl -X POST "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
-            -H "Authorization: Token ${{ secrets.DEFECT_DOJO_API_KEY }}" \
-            -F "scan_type=JUnit XML Report" \
-            -F "file=@${{ github.workspace }}/burp_junit_report.xml;type=application/xml" \
-            -F "product_name=${{ secrets.DEFECTDOJO_PRODUCT_NAME }}" \
-            -F "engagement_name=Burp DAST Scan - $(date +%Y%m%d-%H%M%S)" \
-            -F "auto_create_context=true" \
-            -F "close_old_findings=false" \
-            -F "push_to_jira=false" \
-            -F "minimum_severity=Info" \
-            -F "active=true" \
-            -F "verified=false" || echo "DefectDojo upload failed, continuing pipeline"
+      - name: Upload Burp XML
+        id: upload-burp-results
+        uses: actions/upload-artifact@v4
+        with:
+          name: burp-results
+          path: ${{ github.workspace }}/burp_xml_report.xml
+
+#      - name: Upload Burp scan results to DefectDojo
+#        if: always()
+#        run: |
+#          curl -X POST "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
+#            -H "Authorization: Token ${{ secrets.DEFECT_DOJO_API_KEY }}" \
+#            -F "scan_type=Burp XML Report" \
+#            -F "file=@${{ github.workspace }}/burp_xml_report.xml;type=application/xml" \
+#            -F "product_name=${{ secrets.DEFECTDOJO_PRODUCT_NAME }}" \
+#            -F "engagement_name=Burp DAST Scan - $(date +%Y%m%d-%H%M%S)" \
+#            -F "auto_create_context=true" \
+#            -F "close_old_findings=false" \
+#            -F "push_to_jira=false" \
+#            -F "minimum_severity=Info" \
+#            -F "active=true" \
+#            -F "verified=false" || echo "DefectDojo upload failed, continuing pipeline"
+
+  import_burp_scan_results:
+    name: Import Burp Scan Results
+    if: always()
+    uses: portswigger-cloud/github-actions/.github/workflows/shared-defectdojo-import.yaml@main
+    with:
+      artifact-name: burp-results
+      defectdojo-product-type: ${{ secrets.DEFECTDOJO_PRODUCT_NAME }}
+      defectdojo-product: ${{ secrets.DEFECTDOJO_PRODUCT_NAME }}
+      defectdojo-environment-type: Production
+      defectdojo-scan-type: Burp XML Scan Report
+      defectdojo-engagement-name: "Burp DAST Scan - $(date +%Y%m%d-%H%M%S)"
+      scan-results-file-name: burp_xml_report.xml
+    secrets:
+      defectdojo-username: ${{ secrets.DEFECTDOJO_USERNAME }}
+      defectdojo-password: ${{ secrets.DEFECTDOJO_PASSWORD }}
 
   deploy:
     name: Deploy application
